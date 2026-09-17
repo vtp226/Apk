@@ -1,0 +1,90 @@
+name: 2 - Deep dive on slot limit
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  deep-dive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install apktool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool
+
+      - name: Decompile APK
+        run: |
+          apktool d game-original.apk -o decompiled -f
+
+      - name: Dump the whole player/slot class (game/p.smali)
+        run: |
+          find decompiled/smali -path "*/rts/game/p.smali" -exec cp {} p_full.smali \; || true
+          ls -la p_full.smali || echo "NOT FOUND: p.smali"
+
+      - name: Find every 10-bound loop in the two key UI/engine files
+        run: |
+          echo "===== 0xa / 0x9 (10 / 9) occurrences in MultiplayerBattleroomActivity.smali =====" > deepdive_results.txt
+          grep -n "0xa\b\|0x9\b" decompiled/smali/com/corrodinggames/rts/appFramework/MultiplayerBattleroomActivity.smali >> deepdive_results.txt || true
+
+          echo "" >> deepdive_results.txt
+          echo "===== 0xa / 0x9 (10 / 9) occurrences in gameFramework/j/ae.smali =====" >> deepdive_results.txt
+          grep -n "0xa\b\|0x9\b" decompiled/smali/com/corrodinggames/rts/gameFramework/j/ae.smali >> deepdive_results.txt || true
+
+          echo "" >> deepdive_results.txt
+          echo "===== Any smali file defining player colors (search by name) =====" >> deepdive_results.txt
+          find decompiled/smali -iname "*color*" >> deepdive_results.txt || true
+
+          echo "" >> deepdive_results.txt
+          echo "===== Resource files that look like a color array (10 entries) =====" >> deepdive_results.txt
+          grep -rl "player_color\|playerColor\|PlayerColor" decompiled/res 2>/dev/null >> deepdive_results.txt || true
+          find decompiled/res/values -iname "*color*" >> deepdive_results.txt || true
+
+          cat deepdive_results.txt
+
+      - name: Get full context around each 0xa/0x9 match (30 lines each)
+        run: |
+          mkdir -p context_dumps
+          grep -n "0xa\b\|0x9\b" decompiled/smali/com/corrodinggames/rts/appFramework/MultiplayerBattleroomActivity.smali | cut -d: -f1 > lines1.txt || true
+          i=0
+          while read -r ln; do
+            i=$((i+1))
+            start=$((ln>15 ? ln-15 : 1))
+            end=$((ln+15))
+            { echo "--- MultiplayerBattleroomActivity.smali around line $ln ---"; sed -n "${start},${end}p" decompiled/smali/com/corrodinggames/rts/appFramework/MultiplayerBattleroomActivity.smali; echo ""; } >> context_dumps/battleroom_context.txt
+          done < lines1.txt
+
+          grep -n "0xa\b\|0x9\b" decompiled/smali/com/corrodinggames/rts/gameFramework/j/ae.smali | cut -d: -f1 > lines2.txt || true
+          while read -r ln; do
+            start=$((ln>15 ? ln-15 : 1))
+            end=$((ln+15))
+            { echo "--- ae.smali around line $ln ---"; sed -n "${start},${end}p" decompiled/smali/com/corrodinggames/rts/gameFramework/j/ae.smali; echo ""; } >> context_dumps/ae_context.txt
+          done < lines2.txt
+
+      - name: Upload full p.smali
+        uses: actions/upload-artifact@v4
+        with:
+          name: p-smali-full
+          path: p_full.smali
+          if-no-files-found: warn
+
+      - name: Upload deep dive results
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepdive-results
+          path: deepdive_results.txt
+
+      - name: Upload context dumps
+        uses: actions/upload-artifact@v4
+        with:
+          name: context-dumps
+          path: context_dumps
+          if-no-files-found: warn
