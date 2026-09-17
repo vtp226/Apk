@@ -89,6 +89,14 @@ jobs:
               ".line 3174\n    :goto_2\n    const/16 v4, 0x13\n\n    if-gt v0, v4, :cond_2\n"
           )
 
+          # 7) fix NPE crash: during early engine bootstrap, k.t().bU (the ae/NetworkEngine
+          #    singleton) can still be null when method J() takes the >10-players branch.
+          #    Add a null-check so it safely falls back instead of crashing.
+          patch(P,
+              ".line 3576\n    invoke-static {}, Lcom/corrodinggames/rts/gameFramework/k;->t()Lcom/corrodinggames/rts/gameFramework/k;\n\n    move-result-object v2\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/k;->bU:Lcom/corrodinggames/rts/gameFramework/j/ae;\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/j/ae;->A:Lcom/corrodinggames/rts/game/p;\n\n    .line 3577\n    if-eqz v2, :cond_3\n",
+              ".line 3576\n    invoke-static {}, Lcom/corrodinggames/rts/gameFramework/k;->t()Lcom/corrodinggames/rts/gameFramework/k;\n\n    move-result-object v2\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/k;->bU:Lcom/corrodinggames/rts/gameFramework/j/ae;\n\n    if-eqz v2, :cond_3\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/j/ae;->A:Lcom/corrodinggames/rts/game/p;\n\n    .line 3577\n    if-eqz v2, :cond_3\n"
+          )
+
           print("ALL PATCHES APPLIED SUCCESSFULLY")
           PYEOF
 
