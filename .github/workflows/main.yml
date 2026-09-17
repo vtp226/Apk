@@ -1,0 +1,86 @@
+name: 1 - Find player slot limit
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  decompile-and-search:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install apktool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool
+
+      - name: Decompile APK to smali
+        run: |
+          apktool d game-original.apk -o decompiled -f
+
+      - name: Search for player/AI slot related code
+        run: |
+          echo "===== Matches in smali (bytecode) =====" > search_results.txt
+          grep -rn \
+            -e "max_player_count" \
+            -e "game_max_player_count_int" \
+            -e "No free slots for AI" \
+            -e "No free slots on server" \
+            -e "No free spectator slots" \
+            -e "setupPlayerColorDropDown" \
+            -e "newPlayerColorValue" \
+            decompiled/smali* >> search_results.txt || true
+
+          echo "" >> search_results.txt
+          echo "===== Matches in decoded resources/manifest =====" >> search_results.txt
+          grep -rn \
+            -e "max_player_count" \
+            -e "game_max_player_count_int" \
+            decompiled/res decompiled/AndroidManifest.xml >> search_results.txt || true
+
+          echo "" >> search_results.txt
+          echo "===== Files that reference these strings (for context) =====" >> search_results.txt
+          grep -rl \
+            -e "max_player_count" \
+            -e "No free slots for AI" \
+            -e "setupPlayerColorDropDown" \
+            decompiled/smali* >> search_results.txt || true
+
+          cat search_results.txt
+
+      - name: Collect the exact files that matched (with full content) for review
+        run: |
+          mkdir -p matched_files
+          FILES=$(grep -rl \
+            -e "max_player_count" \
+            -e "game_max_player_count_int" \
+            -e "No free slots for AI" \
+            -e "No free slots on server" \
+            -e "setupPlayerColorDropDown" \
+            -e "newPlayerColorValue" \
+            decompiled/smali* 2>/dev/null || true)
+          for f in $FILES; do
+            mkdir -p "matched_files/$(dirname "$f")"
+            cp "$f" "matched_files/$f"
+          done
+          ls -la matched_files || true
+
+      - name: Upload search results
+        uses: actions/upload-artifact@v4
+        with:
+          name: search-results
+          path: search_results.txt
+
+      - name: Upload matched smali files
+        uses: actions/upload-artifact@v4
+        with:
+          name: matched-smali-files
+          path: matched_files
+          if-no-files-found: warn
