@@ -94,7 +94,7 @@ jobs:
 
       - name: Build patched APK
         run: |
-          apktool b decompiled -o game-patched-unsigned.apk
+          apktool b --use-aapt2 decompiled -o game-patched-unsigned.apk
 
       - name: Generate a personal signing key
         run: |
