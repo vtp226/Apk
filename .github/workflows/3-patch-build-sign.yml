@@ -105,14 +105,32 @@ jobs:
             -storepass android123 -keypass android123 \
             -dname "CN=Local, OU=Local, O=Local, L=Local, S=Local, C=US"
 
-      - name: Sign the APK (jar signing, works fine for sideloading)
+      - name: Locate Android build-tools (zipalign + apksigner, preinstalled on this runner)
+        id: bt
         run: |
-          cp game-patched-unsigned.apk game-patched-signed.apk
-          jarsigner -verbose \
-            -sigalg SHA256withRSA -digestalg SHA-256 \
-            -keystore my-release-key.jks -storepass android123 \
-            game-patched-signed.apk mykey
-          jarsigner -verify game-patched-signed.apk
+          BT_DIR=$(find "$ANDROID_HOME"/build-tools -maxdepth 1 -type d | sort -V | tail -n1)
+          echo "Using build-tools at: $BT_DIR"
+          echo "dir=$BT_DIR" >> "$GITHUB_OUTPUT"
+          ls "$BT_DIR"
+
+      - name: Zipalign
+        run: |
+          "${{ steps.bt.outputs.dir }}/zipalign" -f -p 4 game-patched-unsigned.apk game-patched-aligned.apk
+
+      - name: Sign with apksigner (v1+v2+v3, works on modern Android)
+        run: |
+          "${{ steps.bt.outputs.dir }}/apksigner" sign \
+            --ks my-release-key.jks \
+            --ks-pass pass:android123 \
+            --key-pass pass:android123 \
+            --ks-key-alias mykey \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out game-patched-signed.apk \
+            game-patched-aligned.apk
+
+          "${{ steps.bt.outputs.dir }}/apksigner" verify --verbose game-patched-signed.apk
 
       - name: Upload final signed APK
         uses: actions/upload-artifact@v4
