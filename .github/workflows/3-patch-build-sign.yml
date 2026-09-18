@@ -103,6 +103,24 @@ jobs:
               ".line 3576\n    invoke-static {}, Lcom/corrodinggames/rts/gameFramework/k;->t()Lcom/corrodinggames/rts/gameFramework/k;\n\n    move-result-object v2\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/k;->bU:Lcom/corrodinggames/rts/gameFramework/j/ae;\n\n    if-eqz v2, :cond_3\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/j/ae;->A:Lcom/corrodinggames/rts/game/p;\n\n    .line 3577\n    if-eqz v2, :cond_3\n"
           )
 
+          # 8) THE REAL ROOT CAUSE: p.x() is called every time a new lobby/session is set up
+          #    (from ae.smali's session-reset routine) and unconditionally force-resets the
+          #    max team/player count back to 10 via setMaxTeamId(10, force=true), undoing
+          #    patch #1 every single time you open the battleroom. Bump its hardcoded 10 to 20.
+          patch(P,
+              ".method public static strictfp x()V\n    .locals 3\n\n    .prologue\n    .line 1941\n    const/16 v0, 0xa\n",
+              ".method public static strictfp x()V\n    .locals 3\n\n    .prologue\n    .line 1941\n    const/16 v0, 0x14\n"
+          )
+
+          # 9) battleroom UI: "Side A".."Side J" name-list loop bound (0..9 -> 0..19).
+          #    This is a THIRD, separate loop from #5/#6 above - it builds the actual
+          #    "Side <letter>" strings shown in the Team dropdown, so without this the
+          #    dropdown still only ever lists Side A through Side J.
+          patch(M,
+              ".line 3198\n    :cond_0\n    const/4 v0, 0x0\n\n    :goto_0\n    const/16 v2, 0x9\n\n    if-gt v0, v2, :cond_1\n",
+              ".line 3198\n    :cond_0\n    const/4 v0, 0x0\n\n    :goto_0\n    const/16 v2, 0x13\n\n    if-gt v0, v2, :cond_1\n"
+          )
+
           print("ALL PATCHES APPLIED SUCCESSFULLY")
           PYEOF
 
