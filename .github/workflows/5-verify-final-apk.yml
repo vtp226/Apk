@@ -95,7 +95,7 @@ jobs:
         run: |
           apktool d game-patched-unsigned.apk -o decompiled_rebuilt -f
 
-      - name: Compare the clinit constant across all three: original / patched-source / rebuilt-from-final-apk
+      - name: Compare the clinit constant - original vs patched-source vs rebuilt-from-final-apk
         run: |
           echo "===== ORIGINAL apk (game-original.apk) - should show 0xa (10) =====" > verify_results.txt
           grep -A 5 "constructor <clinit>" decompiled_original/smali/com/corrodinggames/rts/game/p.smali | head -8 >> verify_results.txt
