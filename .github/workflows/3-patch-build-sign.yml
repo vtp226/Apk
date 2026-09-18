@@ -77,11 +77,11 @@ jobs:
           # 4) hardcoded fallback color list + names -> extended to 20 each
           patch(P,
               "#00ff00,#d02013,#0463f3,#ffff40,#00ffff,#d0f8f7,#000000,#ff00ea,#ff7f18,#9368c4",
-              "#00ff00,#d02013,#0463f3,#ffff40,#00ffff,#d0f8f7,#000000,#ff00ea,#ff7f18,#9368c4,#808080,#a52a2a,#008080,#ff8c00,#4b0082,#adff2f,#ff1493,#1e90ff,#b8860b,#2e8b57"
+              "#00ff00,#d02013,#0463f3,#ffff40,#00ffff,#d0f8f7,#000000,#ff00ea,#ff7f18,#9368c4,#007317,#ff4d94,#735c00,#00b2ff,#ff988c,#00ff80,#a64dff,#7acc00,#00997a,#0000ff"
           )
           patch(P,
               "GREEN,RED,BLUE,YELLOW,CYAN,WHITE,BLACK,PINK,ORANGE,PURPLE",
-              "GREEN,RED,BLUE,YELLOW,CYAN,WHITE,BLACK,PINK,ORANGE,PURPLE,GRAY,BROWN,TEAL,DARKORANGE,INDIGO,YELLOWGREEN,DEEPPINK,DODGERBLUE,DARKGOLDENROD,SEAGREEN"
+              "GREEN,RED,BLUE,YELLOW,CYAN,WHITE,BLACK,PINK,ORANGE,PURPLE,DARKGREEN,HOTPINK,BROWN,SKYBLUE,SALMON,SPRINGGREEN,VIOLET,CHARTREUSE,TEAL,DEEPBLUE"
           )
 
           # 5) battleroom UI: color dropdown loop bound (0..9 -> 0..19)
