@@ -25,6 +25,12 @@ jobs:
         run: |
           apktool d game-original.apk -o decompiled -f
 
+      - name: Add the 20-player map and extended tileset image
+        run: |
+          cp "map-assets/units_extended.png" "decompiled/assets/tilesets/bitmaps/units.png"
+          cp "map-assets/Crossing_Large_20p.tmx" "decompiled/assets/maps/skirmish/[z;p20]Crossing Large (20p).tmx"
+          ls -la "decompiled/assets/maps/skirmish/" | grep -i crossing
+
       - name: Apply patches with Python (fails loudly if any anchor doesn't match exactly once)
         run: |
           python3 << 'PYEOF'
