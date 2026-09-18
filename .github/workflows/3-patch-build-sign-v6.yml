@@ -1,0 +1,221 @@
+name: 3 - Patch, build and sign APK
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  patch-build-sign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install apktool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool
+
+      - name: Decompile APK
+        run: |
+          apktool d game-original.apk -o decompiled -f
+
+      - name: Add the 20-player map and extended tileset image
+        run: |
+          cp "map-assets/units_extended.png" "decompiled/assets/tilesets/bitmaps/units.png"
+          cp "map-assets/Crossing_Large_20p.tmx" "decompiled/assets/maps/skirmish/[z;p20]Crossing Large (20p).tmx"
+          ls -la "decompiled/assets/maps/skirmish/" | grep -i crossing
+
+      - name: Apply patches with Python (fails loudly if any anchor doesn't match exactly once)
+        run: |
+          python3 << 'PYEOF'
+          import sys
+
+          def patch(path, old, new, expect=1):
+              with open(path, "r", encoding="utf-8") as f:
+                  content = f.read()
+              count = content.count(old)
+              if count != expect:
+                  print(f"ERROR in {path}: expected {expect} match(es), found {count}")
+                  print("----- looking for -----")
+                  print(old)
+                  sys.exit(1)
+              content = content.replace(old, new)
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(content)
+              print(f"OK patched: {path} ({old[:40]!r} -> {new[:40]!r})")
+
+          P = "decompiled/smali/com/corrodinggames/rts/game/p.smali"
+          M = "decompiled/smali/com/corrodinggames/rts/appFramework/MultiplayerBattleroomActivity.smali"
+          F = "decompiled/smali/com/corrodinggames/rts/appFramework/fw.smali"
+
+          # 1) master slot count in <clinit> (drives c, f, and the two color arrays)
+          patch(P,
+              ".method static strictfp constructor <clinit>()V\n    .locals 3\n\n    .prologue\n    const/4 v1, 0x0\n\n    const/16 v2, 0xa\n",
+              ".method static strictfp constructor <clinit>()V\n    .locals 3\n\n    .prologue\n    const/4 v1, 0x0\n\n    const/16 v2, 0x14\n"
+          )
+
+          # 2) hex color count validation (method d)
+          patch(P,
+              ".method private static strictfp d(Ljava/lang/String;)V\n    .locals 5\n\n    .prologue\n    const/16 v4, 0xa\n",
+              ".method private static strictfp d(Ljava/lang/String;)V\n    .locals 5\n\n    .prologue\n    const/16 v4, 0x14\n"
+          )
+          patch(P, "Expected 10 hex colors", "Expected 20 hex colors")
+
+          # 3) color-name count validation (method e)
+          patch(P,
+              ".method private static strictfp e(Ljava/lang/String;)V\n    .locals 5\n\n    .prologue\n    const/16 v4, 0xa\n",
+              ".method private static strictfp e(Ljava/lang/String;)V\n    .locals 5\n\n    .prologue\n    const/16 v4, 0x14\n"
+          )
+          patch(P, "Expected 10 team color names", "Expected 20 team color names")
+
+          # 4) hardcoded fallback color list + names -> extended to 20 each
+          patch(P,
+              "#00ff00,#d02013,#0463f3,#ffff40,#00ffff,#d0f8f7,#000000,#ff00ea,#ff7f18,#9368c4",
+              "#00ff00,#d02013,#0463f3,#ffff40,#00ffff,#d0f8f7,#000000,#ff00ea,#ff7f18,#9368c4,#808080,#a52a2a,#008080,#ff8c00,#4b0082,#adff2f,#ff1493,#1e90ff,#b8860b,#2e8b57"
+          )
+          patch(P,
+              "GREEN,RED,BLUE,YELLOW,CYAN,WHITE,BLACK,PINK,ORANGE,PURPLE",
+              "GREEN,RED,BLUE,YELLOW,CYAN,WHITE,BLACK,PINK,ORANGE,PURPLE,GRAY,BROWN,TEAL,DARKORANGE,INDIGO,YELLOWGREEN,DEEPPINK,DODGERBLUE,DARKGOLDENROD,SEAGREEN"
+          )
+
+          # 5) battleroom UI: color dropdown loop bound (0..9 -> 0..19)
+          patch(M,
+              ".line 3077\n    :goto_0\n    const/16 v0, 0xa\n\n    if-ge v3, v0, :cond_3\n",
+              ".line 3077\n    :goto_0\n    const/16 v0, 0x14\n\n    if-ge v3, v0, :cond_3\n"
+          )
+
+          # 6) battleroom UI: team dropdown loop bound (0..9 inclusive -> 0..19 inclusive)
+          patch(M,
+              ".line 3174\n    :goto_2\n    const/16 v4, 0x9\n\n    if-gt v0, v4, :cond_2\n",
+              ".line 3174\n    :goto_2\n    const/16 v4, 0x13\n\n    if-gt v0, v4, :cond_2\n"
+          )
+
+          # 7) fix NPE crash: during early engine bootstrap, k.t().bU (the ae/NetworkEngine
+          #    singleton) can still be null when method J() takes the >10-players branch.
+          #    Add a null-check so it safely falls back instead of crashing.
+          patch(P,
+              ".line 3576\n    invoke-static {}, Lcom/corrodinggames/rts/gameFramework/k;->t()Lcom/corrodinggames/rts/gameFramework/k;\n\n    move-result-object v2\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/k;->bU:Lcom/corrodinggames/rts/gameFramework/j/ae;\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/j/ae;->A:Lcom/corrodinggames/rts/game/p;\n\n    .line 3577\n    if-eqz v2, :cond_3\n",
+              ".line 3576\n    invoke-static {}, Lcom/corrodinggames/rts/gameFramework/k;->t()Lcom/corrodinggames/rts/gameFramework/k;\n\n    move-result-object v2\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/k;->bU:Lcom/corrodinggames/rts/gameFramework/j/ae;\n\n    if-eqz v2, :cond_3\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/j/ae;->A:Lcom/corrodinggames/rts/game/p;\n\n    .line 3577\n    if-eqz v2, :cond_3\n"
+          )
+
+          # 8) DEBUG: make the "No free slots for AI" message also show the live
+          #    values of p.c and p.f, so we can see at runtime whether our patch
+          #    to raise them to 20 actually took effect in this build.
+          patch(F,
+              '    .line 10660\n    const-string v3, "No free slots for AI"\n\n    invoke-virtual {v1, v3}, Lcom/corrodinggames/rts/gameFramework/k;->g(Ljava/lang/String;)V\n',
+              '    .line 10660\n'
+              '    new-instance v3, Ljava/lang/StringBuilder;\n\n'
+              '    invoke-direct {v3}, Ljava/lang/StringBuilder;-><init>()V\n\n'
+              '    const-string v4, "No free slots for AI (c="\n\n'
+              '    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;\n\n'
+              '    move-result-object v3\n\n'
+              '    sget v4, Lcom/corrodinggames/rts/game/p;->c:I\n\n'
+              '    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;\n\n'
+              '    move-result-object v3\n\n'
+              '    const-string v4, " f="\n\n'
+              '    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;\n\n'
+              '    move-result-object v3\n\n'
+              '    sget v4, Lcom/corrodinggames/rts/game/p;->f:I\n\n'
+              '    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;\n\n'
+              '    move-result-object v3\n\n'
+              '    const-string v4, ")"\n\n'
+              '    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;\n\n'
+              '    move-result-object v3\n\n'
+              '    invoke-virtual {v3}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;\n\n'
+              '    move-result-object v3\n\n'
+              '    invoke-virtual {v1, v3}, Lcom/corrodinggames/rts/gameFramework/k;->g(Ljava/lang/String;)V\n'
+          )
+
+          # 9) x() forcibly resets the max team id back to 10 every time the
+          #    multiplayer/skirmish lobby screen loads (setMaxTeamId(10, force=true)),
+          #    undoing our clinit patch. Raise it to 20 too.
+          patch(P,
+              '.method public static strictfp x()V\n    .locals 3\n\n    .prologue\n    .line 1941\n    const/16 v0, 0xa\n\n    const/4 v1, 0x1\n',
+              '.method public static strictfp x()V\n    .locals 3\n\n    .prologue\n    .line 1941\n    const/16 v0, 0x14\n\n    const/4 v1, 0x1\n'
+          )
+
+          # 10) fix team color wrap-around: J() was wrapping team index >=10 back to
+          #     (index % 10), which is why teams 10-19 showed the exact same color
+          #     as teams 0-9. Since c is now 20, this wrap threshold should be 20 too.
+          patch(P,
+              '.method public final strictfp J()I\n    .locals 4\n\n    .prologue\n    const/16 v3, 0xa\n',
+              '.method public final strictfp J()I\n    .locals 4\n\n    .prologue\n    const/16 v3, 0x14\n'
+          )
+
+          print("ALL PATCHES APPLIED SUCCESSFULLY")
+          PYEOF
+
+# 11) shared per-unit team-color image array (path 1 of 2) — used by
+          #     every unit type in the game, hardcoded to build only 10 team-tinted
+          #     variants. This is what actually crashed (units.d.g -> p.a()).
+          patch(P,
+              '.method private static strictfp a(Lcom/corrodinggames/rts/gameFramework/m/e;Lcom/corrodinggames/rts/game/q;)[Lcom/corrodinggames/rts/gameFramework/m/e;\n    .locals 5\n\n    .prologue\n    const/4 v2, 0x0\n\n    const/16 v4, 0xa\n\n',
+              '.method private static strictfp a(Lcom/corrodinggames/rts/gameFramework/m/e;Lcom/corrodinggames/rts/game/q;)[Lcom/corrodinggames/rts/gameFramework/m/e;\n    .locals 5\n\n    .prologue\n    const/4 v2, 0x0\n\n    const/16 v4, 0x14\n\n'
+          )
+
+          # 12) shared per-unit team-color image array (path 2 of 2, alternate
+          #     graphics-settings branch) — same fix.
+          patch(P,
+              '.method private static strictfp b(Lcom/corrodinggames/rts/gameFramework/m/e;Lcom/corrodinggames/rts/game/q;)[Lcom/corrodinggames/rts/gameFramework/m/e;\n    .locals 8\n\n    .prologue\n    const/4 v2, 0x0\n\n    const/16 v7, 0xa\n\n',
+              '.method private static strictfp b(Lcom/corrodinggames/rts/gameFramework/m/e;Lcom/corrodinggames/rts/game/q;)[Lcom/corrodinggames/rts/gameFramework/m/e;\n    .locals 8\n\n    .prologue\n    const/4 v2, 0x0\n\n    const/16 v7, 0x14\n\n'
+          )
+
+      - name: Build patched APK
+        run: |
+          apktool b --use-aapt2 decompiled -o game-patched-unsigned.apk
+
+      - name: Generate a personal signing key
+        run: |
+          keytool -genkey -v \
+            -keystore my-release-key.jks \
+            -alias mykey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android123 -keypass android123 \
+            -dname "CN=Local, OU=Local, O=Local, L=Local, S=Local, C=US"
+
+      - name: Locate Android build-tools (zipalign + apksigner, preinstalled on this runner)
+        id: bt
+        run: |
+          BT_DIR=$(find "$ANDROID_HOME"/build-tools -maxdepth 1 -type d | sort -V | tail -n1)
+          echo "Using build-tools at: $BT_DIR"
+          echo "dir=$BT_DIR" >> "$GITHUB_OUTPUT"
+          ls "$BT_DIR"
+
+      - name: Zipalign
+        run: |
+          "${{ steps.bt.outputs.dir }}/zipalign" -f -p 4 game-patched-unsigned.apk game-patched-aligned.apk
+
+      - name: Sign with apksigner (v1+v2+v3, works on modern Android)
+        run: |
+          "${{ steps.bt.outputs.dir }}/apksigner" sign \
+            --ks my-release-key.jks \
+            --ks-pass pass:android123 \
+            --key-pass pass:android123 \
+            --ks-key-alias mykey \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out game-patched-signed.apk \
+            game-patched-aligned.apk
+
+          "${{ steps.bt.outputs.dir }}/apksigner" verify --verbose game-patched-signed.apk
+
+      - name: Upload final signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-patched-signed-apk
+          path: game-patched-signed.apk
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-logs
+          path: decompiled
+          if-no-files-found: warn
