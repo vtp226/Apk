@@ -1,0 +1,81 @@
+name: 5 - Find unit array length-10 crash
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install apktool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool
+
+      - name: Decompile APK
+        run: |
+          apktool d game-original.apk -o decompiled -f
+
+      - name: Locate the crashing class and dump relevant methods
+        run: |
+          echo "===== find d/g.smali under game/units =====" > results.txt
+          find decompiled/smali -path "*/game/units/d/g.smali" >> results.txt
+          echo "" >> results.txt
+
+          echo "===== also list any 'units/d' folder contents (in case nesting differs) =====" >> results.txt
+          find decompiled/smali -path "*/game/units/d*" -maxdepth 20 >> results.txt || true
+          echo "" >> results.txt
+
+          echo "===== also find bp.smali under game/units (S and b methods referenced in the crash) =====" >> results.txt
+          find decompiled/smali -path "*/game/units/bp.smali" >> results.txt
+          echo "" >> results.txt
+
+          cat results.txt
+
+      - name: Dump full content of the found files, and grep for 0xa near new-array
+        run: |
+          mkdir -p matched
+          G=$(find decompiled/smali -path "*/game/units/d/g.smali")
+          BP=$(find decompiled/smali -path "*/game/units/bp.smali")
+          for f in "$G" "$BP"; do
+            if [ -n "$f" ]; then
+              mkdir -p "matched/$(dirname "$f")"
+              cp "$f" "matched/$f"
+            fi
+          done
+
+          echo "===== grep 0xa/0x9 with new-array nearby in g.smali =====" > grep_results.txt
+          if [ -n "$G" ]; then
+            grep -n "0xa\|0x9\|new-array" "$G" >> grep_results.txt || true
+          fi
+          echo "" >> grep_results.txt
+          echo "===== same for bp.smali =====" >> grep_results.txt
+          if [ -n "$BP" ]; then
+            grep -n "0xa\|0x9\|new-array" "$BP" >> grep_results.txt || true
+          fi
+          cat grep_results.txt
+          ls -la matched || true
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-array-results
+          path: |
+            results.txt
+            grep_results.txt
+
+      - name: Upload matched full files
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-array-matched-files
+          path: matched
+          if-no-files-found: warn
