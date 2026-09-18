@@ -98,15 +98,15 @@ jobs:
       - name: Compare the clinit constant - original vs patched-source vs rebuilt-from-final-apk
         run: |
           echo "===== ORIGINAL apk (game-original.apk) - should show 0xa (10) =====" > verify_results.txt
-          grep -A 5 "constructor <clinit>" decompiled_original/smali/com/corrodinggames/rts/game/p.smali | head -8 >> verify_results.txt
+          grep -A 8 "constructor <clinit>" decompiled_original/smali/com/corrodinggames/rts/game/p.smali | head -12 >> verify_results.txt
 
           echo "" >> verify_results.txt
           echo "===== PATCHED SOURCE (before building) - should show 0x14 (20) =====" >> verify_results.txt
-          grep -A 5 "constructor <clinit>" decompiled/smali/com/corrodinggames/rts/game/p.smali | head -8 >> verify_results.txt
+          grep -A 8 "constructor <clinit>" decompiled/smali/com/corrodinggames/rts/game/p.smali | head -12 >> verify_results.txt
 
           echo "" >> verify_results.txt
           echo "===== REBUILT FROM FINAL APK (game-patched-unsigned.apk) - the real test =====" >> verify_results.txt
-          grep -A 5 "constructor <clinit>" decompiled_rebuilt/smali/com/corrodinggames/rts/game/p.smali | head -8 >> verify_results.txt
+          grep -A 8 "constructor <clinit>" decompiled_rebuilt/smali/com/corrodinggames/rts/game/p.smali | head -12 >> verify_results.txt
 
           echo "" >> verify_results.txt
           echo "===== Also check the Side-name-building loop (line ~3198) that was NEVER patched, in the final apk =====" >> verify_results.txt
