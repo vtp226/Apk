@@ -52,6 +52,7 @@ jobs:
 
           P = "decompiled/smali/com/corrodinggames/rts/game/p.smali"
           M = "decompiled/smali/com/corrodinggames/rts/appFramework/MultiplayerBattleroomActivity.smali"
+          F = "decompiled/smali/com/corrodinggames/rts/appFramework/fw.smali"
 
           # 1) master slot count in <clinit> (drives c, f, and the two color arrays)
           patch(P,
@@ -103,22 +104,48 @@ jobs:
               ".line 3576\n    invoke-static {}, Lcom/corrodinggames/rts/gameFramework/k;->t()Lcom/corrodinggames/rts/gameFramework/k;\n\n    move-result-object v2\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/k;->bU:Lcom/corrodinggames/rts/gameFramework/j/ae;\n\n    if-eqz v2, :cond_3\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/j/ae;->A:Lcom/corrodinggames/rts/game/p;\n\n    .line 3577\n    if-eqz v2, :cond_3\n"
           )
 
-          # 8) THE REAL ROOT CAUSE: p.x() is called every time a new lobby/session is set up
-          #    (from ae.smali's session-reset routine) and unconditionally force-resets the
-          #    max team/player count back to 10 via setMaxTeamId(10, force=true), undoing
-          #    patch #1 every single time you open the battleroom. Bump its hardcoded 10 to 20.
-          patch(P,
-              ".method public static strictfp x()V\n    .locals 3\n\n    .prologue\n    .line 1941\n    const/16 v0, 0xa\n",
-              ".method public static strictfp x()V\n    .locals 3\n\n    .prologue\n    .line 1941\n    const/16 v0, 0x14\n"
+          # 8) DEBUG: make the "No free slots for AI" message also show the live
+          #    values of p.c and p.f, so we can see at runtime whether our patch
+          #    to raise them to 20 actually took effect in this build.
+          patch(F,
+              '    .line 10660\n    const-string v3, "No free slots for AI"\n\n    invoke-virtual {v1, v3}, Lcom/corrodinggames/rts/gameFramework/k;->g(Ljava/lang/String;)V\n',
+              '    .line 10660\n'
+              '    new-instance v3, Ljava/lang/StringBuilder;\n\n'
+              '    invoke-direct {v3}, Ljava/lang/StringBuilder;-><init>()V\n\n'
+              '    const-string v4, "No free slots for AI (c="\n\n'
+              '    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;\n\n'
+              '    move-result-object v3\n\n'
+              '    sget v4, Lcom/corrodinggames/rts/game/p;->c:I\n\n'
+              '    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;\n\n'
+              '    move-result-object v3\n\n'
+              '    const-string v4, " f="\n\n'
+              '    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;\n\n'
+              '    move-result-object v3\n\n'
+              '    sget v4, Lcom/corrodinggames/rts/game/p;->f:I\n\n'
+              '    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(I)Ljava/lang/StringBuilder;\n\n'
+              '    move-result-object v3\n\n'
+              '    const-string v4, ")"\n\n'
+              '    invoke-virtual {v3, v4}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;\n\n'
+              '    move-result-object v3\n\n'
+              '    invoke-virtual {v3}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;\n\n'
+              '    move-result-object v3\n\n'
+              '    invoke-virtual {v1, v3}, Lcom/corrodinggames/rts/gameFramework/k;->g(Ljava/lang/String;)V\n'
           )
 
-          # 9) battleroom UI: "Side A".."Side J" name-list loop bound (0..9 -> 0..19).
-          #    This is a THIRD, separate loop from #5/#6 above - it builds the actual
-          #    "Side <letter>" strings shown in the Team dropdown, so without this the
-          #    dropdown still only ever lists Side A through Side J.
-          patch(M,
-              ".line 3198\n    :cond_0\n    const/4 v0, 0x0\n\n    :goto_0\n    const/16 v2, 0x9\n\n    if-gt v0, v2, :cond_1\n",
-              ".line 3198\n    :cond_0\n    const/4 v0, 0x0\n\n    :goto_0\n    const/16 v2, 0x13\n\n    if-gt v0, v2, :cond_1\n"
+          # 9) x() forcibly resets the max team id back to 10 every time the
+          #    multiplayer/skirmish lobby screen loads (setMaxTeamId(10, force=true)),
+          #    undoing our clinit patch. Raise it to 20 too.
+          patch(P,
+              '.method public static strictfp x()V\n    .locals 3\n\n    .prologue\n    .line 1941\n    const/16 v0, 0xa\n\n    const/4 v1, 0x1\n',
+              '.method public static strictfp x()V\n    .locals 3\n\n    .prologue\n    .line 1941\n    const/16 v0, 0x14\n\n    const/4 v1, 0x1\n'
+          )
+
+          # 10) fix team color wrap-around: J() was wrapping team index >=10 back to
+          #     (index % 10), which is why teams 10-19 showed the exact same color
+          #     as teams 0-9. Since c is now 20, this wrap threshold should be 20 too.
+          patch(P,
+              '.method public final strictfp J()I\n    .locals 4\n\n    .prologue\n    const/16 v3, 0xa\n',
+              '.method public final strictfp J()I\n    .locals 4\n\n    .prologue\n    const/16 v3, 0x14\n'
           )
 
           print("ALL PATCHES APPLIED SUCCESSFULLY")
