@@ -1,0 +1,121 @@
+name: 5 - Verify patch is actually in the final APK
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install apktool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool
+
+      - name: Decompile ORIGINAL apk (baseline, should show 0xa)
+        run: |
+          apktool d game-original.apk -o decompiled_original -f
+
+      - name: Decompile, patch, and build a fresh patched apk (same as workflow 3)
+        run: |
+          apktool d game-original.apk -o decompiled -f
+
+          cp "map-assets/units_extended.png" "decompiled/assets/tilesets/bitmaps/units.png"
+          cp "map-assets/Crossing_Large_20p.tmx" "decompiled/assets/maps/skirmish/[z;p20]Crossing Large (20p).tmx"
+
+          python3 << 'PYEOF'
+          import sys
+
+          def patch(path, old, new, expect=1):
+              with open(path, "r", encoding="utf-8") as f:
+                  content = f.read()
+              count = content.count(old)
+              if count != expect:
+                  print(f"ERROR in {path}: expected {expect} match(es), found {count}")
+                  sys.exit(1)
+              content = content.replace(old, new)
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(content)
+              print(f"OK patched: {path}")
+
+          P = "decompiled/smali/com/corrodinggames/rts/game/p.smali"
+          M = "decompiled/smali/com/corrodinggames/rts/appFramework/MultiplayerBattleroomActivity.smali"
+
+          patch(P,
+              ".method static strictfp constructor <clinit>()V\n    .locals 3\n\n    .prologue\n    const/4 v1, 0x0\n\n    const/16 v2, 0xa\n",
+              ".method static strictfp constructor <clinit>()V\n    .locals 3\n\n    .prologue\n    const/4 v1, 0x0\n\n    const/16 v2, 0x14\n"
+          )
+          patch(P,
+              ".method private static strictfp d(Ljava/lang/String;)V\n    .locals 5\n\n    .prologue\n    const/16 v4, 0xa\n",
+              ".method private static strictfp d(Ljava/lang/String;)V\n    .locals 5\n\n    .prologue\n    const/16 v4, 0x14\n"
+          )
+          patch(P, "Expected 10 hex colors", "Expected 20 hex colors")
+          patch(P,
+              ".method private static strictfp e(Ljava/lang/String;)V\n    .locals 5\n\n    .prologue\n    const/16 v4, 0xa\n",
+              ".method private static strictfp e(Ljava/lang/String;)V\n    .locals 5\n\n    .prologue\n    const/16 v4, 0x14\n"
+          )
+          patch(P, "Expected 10 team color names", "Expected 20 team color names")
+          patch(P,
+              "#00ff00,#d02013,#0463f3,#ffff40,#00ffff,#d0f8f7,#000000,#ff00ea,#ff7f18,#9368c4",
+              "#00ff00,#d02013,#0463f3,#ffff40,#00ffff,#d0f8f7,#000000,#ff00ea,#ff7f18,#9368c4,#808080,#a52a2a,#008080,#ff8c00,#4b0082,#adff2f,#ff1493,#1e90ff,#b8860b,#2e8b57"
+          )
+          patch(P,
+              "GREEN,RED,BLUE,YELLOW,CYAN,WHITE,BLACK,PINK,ORANGE,PURPLE",
+              "GREEN,RED,BLUE,YELLOW,CYAN,WHITE,BLACK,PINK,ORANGE,PURPLE,GRAY,BROWN,TEAL,DARKORANGE,INDIGO,YELLOWGREEN,DEEPPINK,DODGERBLUE,DARKGOLDENROD,SEAGREEN"
+          )
+          patch(M,
+              ".line 3077\n    :goto_0\n    const/16 v0, 0xa\n\n    if-ge v3, v0, :cond_3\n",
+              ".line 3077\n    :goto_0\n    const/16 v0, 0x14\n\n    if-ge v3, v0, :cond_3\n"
+          )
+          patch(M,
+              ".line 3174\n    :goto_2\n    const/16 v4, 0x9\n\n    if-gt v0, v4, :cond_2\n",
+              ".line 3174\n    :goto_2\n    const/16 v4, 0x13\n\n    if-gt v0, v4, :cond_2\n"
+          )
+          patch(P,
+              ".line 3576\n    invoke-static {}, Lcom/corrodinggames/rts/gameFramework/k;->t()Lcom/corrodinggames/rts/gameFramework/k;\n\n    move-result-object v2\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/k;->bU:Lcom/corrodinggames/rts/gameFramework/j/ae;\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/j/ae;->A:Lcom/corrodinggames/rts/game/p;\n\n    .line 3577\n    if-eqz v2, :cond_3\n",
+              ".line 3576\n    invoke-static {}, Lcom/corrodinggames/rts/gameFramework/k;->t()Lcom/corrodinggames/rts/gameFramework/k;\n\n    move-result-object v2\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/k;->bU:Lcom/corrodinggames/rts/gameFramework/j/ae;\n\n    if-eqz v2, :cond_3\n\n    iget-object v2, v2, Lcom/corrodinggames/rts/gameFramework/j/ae;->A:Lcom/corrodinggames/rts/game/p;\n\n    .line 3577\n    if-eqz v2, :cond_3\n"
+          )
+          print("ALL PATCHES APPLIED SUCCESSFULLY")
+          PYEOF
+
+      - name: Build the patched apk (unsigned is enough for this check)
+        run: |
+          apktool b --use-aapt2 decompiled -o game-patched-unsigned.apk
+
+      - name: Re-decompile the FRESHLY BUILT apk to see what actually made it into the dex
+        run: |
+          apktool d game-patched-unsigned.apk -o decompiled_rebuilt -f
+
+      - name: Compare the clinit constant across all three: original / patched-source / rebuilt-from-final-apk
+        run: |
+          echo "===== ORIGINAL apk (game-original.apk) - should show 0xa (10) =====" > verify_results.txt
+          grep -A 5 "constructor <clinit>" decompiled_original/smali/com/corrodinggames/rts/game/p.smali | head -8 >> verify_results.txt
+
+          echo "" >> verify_results.txt
+          echo "===== PATCHED SOURCE (before building) - should show 0x14 (20) =====" >> verify_results.txt
+          grep -A 5 "constructor <clinit>" decompiled/smali/com/corrodinggames/rts/game/p.smali | head -8 >> verify_results.txt
+
+          echo "" >> verify_results.txt
+          echo "===== REBUILT FROM FINAL APK (game-patched-unsigned.apk) - the real test =====" >> verify_results.txt
+          grep -A 5 "constructor <clinit>" decompiled_rebuilt/smali/com/corrodinggames/rts/game/p.smali | head -8 >> verify_results.txt
+
+          echo "" >> verify_results.txt
+          echo "===== Also check the Side-name-building loop (line ~3198) that was NEVER patched, in the final apk =====" >> verify_results.txt
+          grep -n "0xa\b\|0x9\b" decompiled_rebuilt/smali/com/corrodinggames/rts/appFramework/MultiplayerBattleroomActivity.smali >> verify_results.txt
+
+          cat verify_results.txt
+
+      - name: Upload verification results
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-results
+          path: verify_results.txt
