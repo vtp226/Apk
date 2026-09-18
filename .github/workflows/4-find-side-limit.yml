@@ -1,0 +1,64 @@
+name: 4 - Find Side A-J team limit
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install apktool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool
+
+      - name: Decompile APK
+        run: |
+          apktool d game-original.apk -o decompiled -f
+
+      - name: Confirm the 20p map is actually present after our asset-copy step
+        run: |
+          echo "===== our custom map file, if present in the ORIGINAL apk's assets =====" > results.txt
+          find decompiled/assets/maps -iname "*20p*" -o -iname "*Crossing Large*" >> results.txt
+
+      - name: Search resources for "Side A" / "Side J" / team name arrays
+        run: |
+          echo "" >> results.txt
+          echo "===== res/values matches for Side/team-name strings =====" >> results.txt
+          grep -rn "Side A\|Side J\|Side_A\|sideA\|teamName\|team_name" decompiled/res/values/ >> results.txt || true
+
+          echo "" >> results.txt
+          echo "===== any string-array with roughly 10 <item> entries near 'Side' =====" >> results.txt
+          grep -rln "Side" decompiled/res/values/*.xml >> results.txt || true
+
+      - name: Dump full content of any matching files
+        run: |
+          mkdir -p matched_res
+          FILES=$(grep -rl "Side A\|Side J\|Side_A\|sideA" decompiled/res/values/ 2>/dev/null || true)
+          for f in $FILES; do
+            mkdir -p "matched_res/$(dirname "$f")"
+            cp "$f" "matched_res/$f"
+          done
+          ls -la matched_res || true
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: side-limit-results
+          path: results.txt
+
+      - name: Upload matched resource files
+        uses: actions/upload-artifact@v4
+        with:
+          name: side-limit-matched-files
+          path: matched_res
+          if-no-files-found: warn
