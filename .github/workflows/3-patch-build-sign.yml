@@ -179,7 +179,623 @@ jobs:
               '.method public static strictfp h(I)Ljava/lang/String;\n    .locals 1\n\n    .prologue\n    .line 2422\n    .line 2424\n    if-ltz p0, :cond_0\n\n    const/16 v0, 0x14\n\n    if-ge p0, v0, :cond_0\n'
           )
 
+          # 15) ADAPTIVE / COPYCAT AI (helper class).
+          #     New class game/a/Adapt: every 3s it counts the army of HUMAN teams
+          #     (teams that are not AIs), split by movement type (land / hover / air)
+          #     and by exact unit type. Nothing happens until humans own >= 20 units.
+          #     ADAPTIVE (feature 2): AI unit types are re-weighted by what they can hit,
+          #     read from the units' own canAttackFlyingUnits/canAttackLandUnits flags
+          #     (no unit names hardcoded, works with any mod).
+          #     PREDICTOR (feature 8): the human air share is tracked as a fast and a slow
+          #     moving average; the AI reacts to the projected share (fast + 3*trend).
+          V = "decompiled/smali/com/corrodinggames/rts/game/a/v.smali"
+          Q = "decompiled/smali/com/corrodinggames/rts/game/a/q.smali"
+          ADAPT = "decompiled/smali/com/corrodinggames/rts/game/a/Adapt.smali"
+          open(ADAPT, "w", encoding="utf-8").write(r'''
+          .class public final Lcom/corrodinggames/rts/game/a/Adapt;
+          .super Ljava/lang/Object;
+          .source "Adapt.java"
+
+          # Adaptive / copycat AI helper.
+          # Samples the army composition of HUMAN teams (teams that are not game/a/a AIs)
+          # at most every 3 seconds and biases what the AIs choose to build.
+
+          .field private static a:I
+          .field private static b:I
+          .field private static c:I
+          .field private static d:J
+          .field private static e:Ljava/util/HashMap;
+          .field private static f:I
+          .field private static g:F
+          .field private static h:F
+          .field private static ps:F
+          .field private static pf:F
+          .field private static pm:F
+
+          .method static constructor <clinit>()V
+              .locals 2
+
+              const/4 v0, 0x0
+
+              sput v0, Lcom/corrodinggames/rts/game/a/Adapt;->a:I
+
+              sput v0, Lcom/corrodinggames/rts/game/a/Adapt;->b:I
+
+              sput v0, Lcom/corrodinggames/rts/game/a/Adapt;->c:I
+
+              sput v0, Lcom/corrodinggames/rts/game/a/Adapt;->f:I
+
+              sput v0, Lcom/corrodinggames/rts/game/a/Adapt;->g:F
+
+              sput v0, Lcom/corrodinggames/rts/game/a/Adapt;->h:F
+
+              sput v0, Lcom/corrodinggames/rts/game/a/Adapt;->pf:F
+
+              sput v0, Lcom/corrodinggames/rts/game/a/Adapt;->pm:F
+
+              const/high16 v0, 0xbf800000
+
+              sput v0, Lcom/corrodinggames/rts/game/a/Adapt;->ps:F
+
+              const-wide/16 v0, 0x0
+
+              sput-wide v0, Lcom/corrodinggames/rts/game/a/Adapt;->d:J
+
+              new-instance v0, Ljava/util/HashMap;
+
+              invoke-direct {v0}, Ljava/util/HashMap;-><init>()V
+
+              sput-object v0, Lcom/corrodinggames/rts/game/a/Adapt;->e:Ljava/util/HashMap;
+
+              return-void
+          .end method
+
+          .method private static s()V
+              .locals 11
+
+              invoke-static {}, Ljava/lang/System;->currentTimeMillis()J
+
+              move-result-wide v0
+
+              sget-wide v2, Lcom/corrodinggames/rts/game/a/Adapt;->d:J
+
+              sub-long v4, v0, v2
+
+              const-wide/16 v6, 0xbb8
+
+              cmp-long v4, v4, v6
+
+              if-ltz v4, :s_done
+
+              sput-wide v0, Lcom/corrodinggames/rts/game/a/Adapt;->d:J
+
+              const/4 v4, 0x0
+
+              sput v4, Lcom/corrodinggames/rts/game/a/Adapt;->a:I
+
+              sput v4, Lcom/corrodinggames/rts/game/a/Adapt;->b:I
+
+              sput v4, Lcom/corrodinggames/rts/game/a/Adapt;->c:I
+
+              sput v4, Lcom/corrodinggames/rts/game/a/Adapt;->f:I
+
+              sget-object v4, Lcom/corrodinggames/rts/game/a/Adapt;->e:Ljava/util/HashMap;
+
+              invoke-virtual {v4}, Ljava/util/HashMap;->clear()V
+
+              sget-object v4, Lcom/corrodinggames/rts/game/units/ce;->bG:Lcom/corrodinggames/rts/gameFramework/utility/x;
+
+              iget-object v5, v4, Lcom/corrodinggames/rts/gameFramework/utility/x;->c:[Lcom/corrodinggames/rts/game/units/ce;
+
+              invoke-virtual {v4}, Lcom/corrodinggames/rts/gameFramework/utility/x;->size()I
+
+              move-result v6
+
+              const/4 v7, 0x0
+
+              :s_loop
+              if-ge v7, v6, :s_upd
+
+              aget-object v8, v5, v7
+
+              add-int/lit8 v7, v7, 0x1
+
+              if-eqz v8, :s_loop
+
+              iget-object v9, v8, Lcom/corrodinggames/rts/game/units/ce;->bZ:Lcom/corrodinggames/rts/game/p;
+
+              if-eqz v9, :s_loop
+
+              instance-of v10, v9, Lcom/corrodinggames/rts/game/a/a;
+
+              if-nez v10, :s_loop
+
+              iget-object v8, v8, Lcom/corrodinggames/rts/game/units/ce;->dB:Lcom/corrodinggames/rts/game/units/el;
+
+              if-eqz v8, :s_loop
+
+              invoke-interface {v8}, Lcom/corrodinggames/rts/game/units/el;->o()Lcom/corrodinggames/rts/game/units/cg;
+
+              move-result-object v9
+
+              sget-object v10, Lcom/corrodinggames/rts/game/units/cg;->b:Lcom/corrodinggames/rts/game/units/cg;
+
+              if-eq v9, v10, :s_land
+
+              sget-object v10, Lcom/corrodinggames/rts/game/units/cg;->g:Lcom/corrodinggames/rts/game/units/cg;
+
+              if-eq v9, v10, :s_land
+
+              sget-object v10, Lcom/corrodinggames/rts/game/units/cg;->f:Lcom/corrodinggames/rts/game/units/cg;
+
+              if-eq v9, v10, :s_hover
+
+              sget-object v10, Lcom/corrodinggames/rts/game/units/cg;->h:Lcom/corrodinggames/rts/game/units/cg;
+
+              if-eq v9, v10, :s_hover
+
+              sget-object v10, Lcom/corrodinggames/rts/game/units/cg;->d:Lcom/corrodinggames/rts/game/units/cg;
+
+              if-eq v9, v10, :s_air
+
+              goto :s_loop
+
+              :s_land
+              sget v9, Lcom/corrodinggames/rts/game/a/Adapt;->a:I
+
+              add-int/lit8 v9, v9, 0x1
+
+              sput v9, Lcom/corrodinggames/rts/game/a/Adapt;->a:I
+
+              goto :s_type
+
+              :s_hover
+              sget v9, Lcom/corrodinggames/rts/game/a/Adapt;->b:I
+
+              add-int/lit8 v9, v9, 0x1
+
+              sput v9, Lcom/corrodinggames/rts/game/a/Adapt;->b:I
+
+              goto :s_type
+
+              :s_air
+              sget v9, Lcom/corrodinggames/rts/game/a/Adapt;->c:I
+
+              add-int/lit8 v9, v9, 0x1
+
+              sput v9, Lcom/corrodinggames/rts/game/a/Adapt;->c:I
+
+              :s_type
+              sget-object v9, Lcom/corrodinggames/rts/game/a/Adapt;->e:Ljava/util/HashMap;
+
+              invoke-virtual {v9, v8}, Ljava/util/HashMap;->get(Ljava/lang/Object;)Ljava/lang/Object;
+
+              move-result-object v10
+
+              if-nez v10, :s_has
+
+              const/4 v10, 0x1
+
+              goto :s_put
+
+              :s_has
+              check-cast v10, Ljava/lang/Integer;
+
+              invoke-virtual {v10}, Ljava/lang/Integer;->intValue()I
+
+              move-result v10
+
+              add-int/lit8 v10, v10, 0x1
+
+              :s_put
+              invoke-static {v10}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;
+
+              move-result-object v10
+
+              invoke-virtual {v9, v8, v10}, Ljava/util/HashMap;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+
+              sget v9, Lcom/corrodinggames/rts/game/a/Adapt;->f:I
+
+              add-int/lit8 v9, v9, 0x1
+
+              sput v9, Lcom/corrodinggames/rts/game/a/Adapt;->f:I
+
+              goto :s_loop
+
+              :s_upd
+              sget v0, Lcom/corrodinggames/rts/game/a/Adapt;->a:I
+
+              sget v1, Lcom/corrodinggames/rts/game/a/Adapt;->b:I
+
+              sget v2, Lcom/corrodinggames/rts/game/a/Adapt;->c:I
+
+              add-int v3, v0, v1
+
+              add-int/2addr v3, v2
+
+              const/16 v4, 0x14
+
+              if-lt v3, v4, :s_done
+
+              int-to-float v3, v3
+
+              int-to-float v2, v2
+
+              div-float/2addr v2, v3
+
+              sget v0, Lcom/corrodinggames/rts/game/a/Adapt;->ps:F
+
+              const/4 v1, 0x0
+
+              cmpl-float v1, v0, v1
+
+              if-gez v1, :s_have
+
+              sput v2, Lcom/corrodinggames/rts/game/a/Adapt;->ps:F
+
+              sput v2, Lcom/corrodinggames/rts/game/a/Adapt;->pf:F
+
+              sput v2, Lcom/corrodinggames/rts/game/a/Adapt;->pm:F
+
+              goto :s_done
+
+              :s_have
+              sget v1, Lcom/corrodinggames/rts/game/a/Adapt;->pf:F
+
+              const/high16 v3, 0x3f000000
+
+              mul-float/2addr v1, v3
+
+              mul-float v4, v2, v3
+
+              add-float/2addr v1, v4
+
+              sput v1, Lcom/corrodinggames/rts/game/a/Adapt;->pf:F
+
+              const v3, 0x3f666666
+
+              mul-float/2addr v0, v3
+
+              const v3, 0x3dcccccd
+
+              mul-float/2addr v3, v2
+
+              add-float/2addr v0, v3
+
+              sput v0, Lcom/corrodinggames/rts/game/a/Adapt;->ps:F
+
+              sub-float v2, v1, v0
+
+              const/high16 v3, 0x40400000
+
+              mul-float/2addr v2, v3
+
+              add-float/2addr v2, v1
+
+              const/4 v3, 0x0
+
+              cmpg-float v4, v2, v3
+
+              if-gez v4, :s_c1
+
+              move v2, v3
+
+              :s_c1
+              const/high16 v3, 0x3f800000
+
+              cmpl-float v4, v2, v3
+
+              if-lez v4, :s_c2
+
+              move v2, v3
+
+              :s_c2
+              sput v2, Lcom/corrodinggames/rts/game/a/Adapt;->pm:F
+
+              :s_done
+              return-void
+          .end method
+
+          .method public static b(FFLcom/corrodinggames/rts/game/a/a;)F
+              .locals 6
+
+              invoke-static {}, Lcom/corrodinggames/rts/game/a/Adapt;->s()V
+
+              sput p0, Lcom/corrodinggames/rts/game/a/Adapt;->g:F
+
+              sput p1, Lcom/corrodinggames/rts/game/a/Adapt;->h:F
+
+              const v0, 0x3ecccccd
+
+              cmpl-float v0, p0, v0
+
+              if-nez v0, :b_ret
+
+              const v0, 0x3e99999a
+
+              cmpl-float v0, p1, v0
+
+              if-nez v0, :b_ret
+
+              sget v0, Lcom/corrodinggames/rts/game/a/Adapt;->a:I
+
+              sget v1, Lcom/corrodinggames/rts/game/a/Adapt;->b:I
+
+              sget v2, Lcom/corrodinggames/rts/game/a/Adapt;->c:I
+
+              add-int v3, v0, v1
+
+              add-int/2addr v3, v2
+
+              const/16 v4, 0x14
+
+              if-lt v3, v4, :b_ret
+
+              int-to-float v3, v3
+
+              int-to-float v0, v0
+
+              int-to-float v1, v1
+
+              div-float/2addr v0, v3
+
+              div-float/2addr v1, v3
+
+              const/high16 v4, 0x3f000000
+
+              mul-float v5, p0, v4
+
+              mul-float/2addr v0, v4
+
+              add-float/2addr v0, v5
+
+              sput v0, Lcom/corrodinggames/rts/game/a/Adapt;->g:F
+
+              mul-float v5, p1, v4
+
+              mul-float/2addr v1, v4
+
+              add-float/2addr v1, v5
+
+              sput v1, Lcom/corrodinggames/rts/game/a/Adapt;->h:F
+
+              :b_ret
+              sget v0, Lcom/corrodinggames/rts/game/a/Adapt;->g:F
+
+              return v0
+          .end method
+
+          .method public static c()F
+              .locals 1
+
+              sget v0, Lcom/corrodinggames/rts/game/a/Adapt;->h:F
+
+              return v0
+          .end method
+
+          .method private static cl(Lcom/corrodinggames/rts/game/units/el;)I
+              .locals 3
+
+              instance-of v0, p0, Lcom/corrodinggames/rts/game/units/custom/l;
+
+              if-nez v0, :cl_ok
+
+              const/4 v0, 0x0
+
+              return v0
+
+              :cl_ok
+              check-cast p0, Lcom/corrodinggames/rts/game/units/custom/l;
+
+              const/4 v0, 0x0
+
+              iget-object v1, p0, Lcom/corrodinggames/rts/game/units/custom/l;->eq:Lcom/corrodinggames/rts/game/units/custom/logicBooleans/LogicBoolean;
+
+              if-eqz v1, :cl_l
+
+              invoke-static {v1}, Lcom/corrodinggames/rts/game/units/custom/logicBooleans/LogicBoolean;->isStaticFalse(Lcom/corrodinggames/rts/game/units/custom/logicBooleans/LogicBoolean;)Z
+
+              move-result v1
+
+              if-nez v1, :cl_l
+
+              or-int/lit8 v0, v0, 0x1
+
+              :cl_l
+              iget-object v1, p0, Lcom/corrodinggames/rts/game/units/custom/l;->er:Lcom/corrodinggames/rts/game/units/custom/logicBooleans/LogicBoolean;
+
+              if-eqz v1, :cl_r
+
+              invoke-static {v1}, Lcom/corrodinggames/rts/game/units/custom/logicBooleans/LogicBoolean;->isStaticFalse(Lcom/corrodinggames/rts/game/units/custom/logicBooleans/LogicBoolean;)Z
+
+              move-result v1
+
+              if-nez v1, :cl_r
+
+              or-int/lit8 v0, v0, 0x2
+
+              :cl_r
+              return v0
+          .end method
+
+          .method private static mx(IF)F
+              .locals 4
+
+              const/high16 v0, 0x3f800000
+
+              and-int/lit8 v1, p0, 0x1
+
+              if-eqz v1, :x_noair
+
+              const/high16 v2, 0x40400000
+
+              mul-float/2addr v2, p1
+
+              add-float/2addr v0, v2
+
+              and-int/lit8 v1, p0, 0x2
+
+              if-nez v1, :x_ret
+
+              const/high16 v2, 0x40800000
+
+              mul-float/2addr v2, p1
+
+              const v3, 0x3e4ccccd
+
+              cmpg-float v1, v2, v3
+
+              if-gez v1, :x_a
+
+              move v2, v3
+
+              :x_a
+              const/high16 v3, 0x3fc00000
+
+              cmpl-float v1, v2, v3
+
+              if-lez v1, :x_b
+
+              move v2, v3
+
+              :x_b
+              mul-float/2addr v0, v2
+
+              goto :x_ret
+
+              :x_noair
+              if-eqz p0, :x_ret
+
+              const/high16 v2, 0x3f000000
+
+              mul-float/2addr v2, p1
+
+              sub-float/2addr v0, v2
+
+              :x_ret
+              return v0
+          .end method
+
+          .method public static w(Lcom/corrodinggames/rts/game/a/r;Lcom/corrodinggames/rts/game/a/q;)F
+              .locals 5
+
+              iget v0, p0, Lcom/corrodinggames/rts/game/a/r;->b:F
+
+              iget-object v1, p1, Lcom/corrodinggames/rts/game/a/q;->b:Ljava/lang/String;
+
+              if-eqz v1, :w_ret
+
+              const-string v2, "attackingUnits"
+
+              invoke-virtual {v1, v2}, Ljava/lang/String;->startsWith(Ljava/lang/String;)Z
+
+              move-result v1
+
+              if-eqz v1, :w_ret
+
+              sget v1, Lcom/corrodinggames/rts/game/a/Adapt;->f:I
+
+              const/16 v2, 0x14
+
+              if-lt v1, v2, :w_ret
+
+              sget-object v2, Lcom/corrodinggames/rts/game/a/Adapt;->e:Ljava/util/HashMap;
+
+              iget-object v3, p0, Lcom/corrodinggames/rts/game/a/r;->a:Lcom/corrodinggames/rts/game/units/el;
+
+              invoke-virtual {v2, v3}, Ljava/util/HashMap;->get(Ljava/lang/Object;)Ljava/lang/Object;
+
+              move-result-object v2
+
+              if-eqz v2, :w_adapt
+
+              check-cast v2, Ljava/lang/Integer;
+
+              invoke-virtual {v2}, Ljava/lang/Integer;->intValue()I
+
+              move-result v2
+
+              int-to-float v2, v2
+
+              int-to-float v1, v1
+
+              div-float/2addr v2, v1
+
+              const/high16 v1, 0x40000000
+
+              mul-float/2addr v2, v1
+
+              const/high16 v1, 0x3f800000
+
+              add-float/2addr v2, v1
+
+              mul-float/2addr v0, v2
+
+              :w_adapt
+              invoke-static {v3}, Lcom/corrodinggames/rts/game/a/Adapt;->cl(Lcom/corrodinggames/rts/game/units/el;)I
+
+              move-result v1
+
+              sget v2, Lcom/corrodinggames/rts/game/a/Adapt;->pm:F
+
+              invoke-static {v1, v2}, Lcom/corrodinggames/rts/game/a/Adapt;->mx(IF)F
+
+              move-result v1
+
+              mul-float/2addr v0, v1
+
+              :w_ret
+              return v0
+          .end method
+
+          '''.lstrip("\n"))
+          print("wrote", ADAPT)
+
+          # 16) COPYCAT at category level: in v.j() the AI rolls land 40% / hover 30% /
+          #     air 30%. Blend that 50/50 with the human's real land/hover/air shares.
+          #     Only touches the default roll (0.4 / 0.3), never the special cases.
+          patch(V,
+              '    .line 2963\n    :cond_3\n    const/4 v9, 0x0\n',
+              '    .line 2963\n    :cond_3\n'
+              '    iget-object v9, p0, Lcom/corrodinggames/rts/game/a/v;->R:Lcom/corrodinggames/rts/game/a/a;\n\n'
+              '    invoke-static {v4, v3, v9}, Lcom/corrodinggames/rts/game/a/Adapt;->b(FFLcom/corrodinggames/rts/game/a/a;)F\n\n'
+              '    move-result v10\n\n'
+              '    invoke-static {}, Lcom/corrodinggames/rts/game/a/Adapt;->c()F\n\n'
+              '    move-result v3\n\n'
+              '    move v4, v10\n\n'
+              '    const/4 v9, 0x0\n'
+          )
+
+          # 17) COPYCAT at unit-type level: when the AI picks a unit from an
+          #     "attackingUnits*" pool, weight each type by (1 + 2 * human share of
+          #     that exact type). 60% tanks on the human side -> tank weight x2.2.
+          patch(Q,
+              '    iget v0, v0, Lcom/corrodinggames/rts/game/a/r;->b:F\n\n    add-float/2addr v2, v0\n',
+              '    invoke-static {v0, p0}, Lcom/corrodinggames/rts/game/a/Adapt;->w(Lcom/corrodinggames/rts/game/a/r;Lcom/corrodinggames/rts/game/a/q;)F\n\n'
+              '    move-result v0\n\n    add-float/2addr v2, v0\n'
+          )
+          patch(Q,
+              '    iget v5, v0, Lcom/corrodinggames/rts/game/a/r;->b:F\n\n    add-float/2addr v3, v5\n',
+              '    invoke-static {v0, p0}, Lcom/corrodinggames/rts/game/a/Adapt;->w(Lcom/corrodinggames/rts/game/a/r;Lcom/corrodinggames/rts/game/a/q;)F\n\n'
+              '    move-result v5\n\n    add-float/2addr v3, v5\n'
+          )
+
           print("ALL PATCHES APPLIED SUCCESSFULLY")
+          PYEOF
+
+      - name: Enable large heap (less GC stutter with big armies / many team colors)
+        run: |
+          python3 - << 'PYEOF'
+          import re
+          p = "decompiled/AndroidManifest.xml"
+          t = open(p, encoding="utf-8").read()
+          assert t.count("<application") == 1, "expected exactly one <application> tag"
+          if "android:largeHeap" in t:
+              t = re.sub(r'android:largeHeap="[^"]*"', 'android:largeHeap="true"', t)
+          else:
+              t = t.replace("<application", '<application android:largeHeap="true"', 1)
+          open(p, "w", encoding="utf-8").write(t)
+          print("largeHeap enabled:", 'android:largeHeap="true"' in t)
           PYEOF
 
       - name: Build patched APK
