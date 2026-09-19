@@ -1,0 +1,51 @@
+name: 7 - Dump whole AI package (game/a)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install apktool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool
+
+      - name: Decompile APK
+        run: |
+          apktool d game-original.apk -o decompiled -f
+
+      - name: Copy every file of the AI package
+        run: |
+          mkdir -p ai_package
+          cp -r decompiled/smali/com/corrodinggames/rts/game/a/. ai_package/
+          ls -la ai_package | head -60
+          wc -c ai_package/*.smali | sort -n | tail -15
+
+      - name: Find where the AI queues units for building
+        run: |
+          echo "===== callers that add units to a factory queue / place buildings =====" > queue_calls.txt
+          grep -rn "getRandomUnitType\|rebuildUnitMix\|useAsBuilder\|upgradePriority\|isHighPriority" decompiled/smali* | cut -c1-220 | head -200 >> queue_calls.txt || true
+          head -60 queue_calls.txt
+
+      - name: Upload AI package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-package
+          path: ai_package
+
+      - name: Upload queue-related grep
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-queue-calls
+          path: queue_calls.txt
