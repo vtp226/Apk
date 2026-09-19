@@ -1,0 +1,51 @@
+name: 8 - Export full decompiled source (everything)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install apktool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool
+
+      - name: Decompile APK
+        run: |
+          apktool d game-original.apk -o decompiled -f
+
+      - name: Report sizes (so we know what we're dealing with)
+        run: |
+          echo "----- full decompiled/ size -----"
+          du -sh decompiled
+          echo "----- smali size -----"
+          du -sh decompiled/smali
+          echo "----- res/values size -----"
+          du -sh decompiled/res/values 2>/dev/null || true
+          echo "----- number of smali files -----"
+          find decompiled/smali -name "*.smali" | wc -l
+
+      - name: Zip the ENTIRE decompiled output (everything - smali, res, assets, lib, all of it)
+        run: |
+          cd decompiled
+          zip -r -q ../full-decompile.zip .
+          cd ..
+          echo "----- final zip size -----"
+          du -sh full-decompile.zip
+
+      - name: Upload full decompile as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-decompile
+          path: full-decompile.zip
