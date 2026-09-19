@@ -1,0 +1,105 @@
+name: 6 - Find AI logic (build order)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install apktool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool
+
+      - name: Decompile APK
+        run: |
+          apktool d game-original.apk -o decompiled -f
+
+      - name: Score every smali file for AI-related content
+        run: |
+          python3 << 'PYEOF'
+          import os, re, shutil
+
+          ROOT = "decompiled"
+          # strings / words that show up in AI decision code
+          PATTERNS = [
+              r'"[^"]*\bAI\b[^"]*"',          # any string constant mentioning AI
+              r'aiDifficulty', r'difficulty', r'isAI', r'\bai[A-Z_]\w*',
+              r'AIDifficulty', r'Assistant', r'canBuild', r'buildQueue',
+              r'queueUnit', r'addBuild', r'\bcredits\b', r'attackWave',
+              r'aiRush', r'"AI[^"]*"',
+          ]
+          rx = [re.compile(p) for p in PATTERNS]
+
+          scores = []
+          for dp, _, fs in os.walk(ROOT):
+              if "/smali" not in dp.replace("\\", "/") + "/":
+                  continue
+              for f in fs:
+                  if not f.endswith(".smali"):
+                      continue
+                  p = os.path.join(dp, f)
+                  try:
+                      t = open(p, encoding="utf-8", errors="ignore").read()
+                  except Exception:
+                      continue
+                  s = sum(len(r.findall(t)) for r in rx)
+                  if s:
+                      scores.append((s, len(t), p))
+
+          scores.sort(reverse=True)
+          with open("ai_ranking.txt", "w") as out:
+              out.write("score  bytes  path\n")
+              for s, n, p in scores[:150]:
+                  out.write(f"{s:5d} {n:8d}  {p}\n")
+
+          # copy the 20 best-scoring files (skip huge ones) for review
+          os.makedirs("ai_files", exist_ok=True)
+          n = 0
+          for s, size, p in scores:
+              if size > 800_000:
+                  continue
+              dst = os.path.join("ai_files", p)
+              os.makedirs(os.path.dirname(dst), exist_ok=True)
+              shutil.copy(p, dst)
+              n += 1
+              if n >= 20:
+                  break
+          print(open("ai_ranking.txt").read()[:3000])
+          PYEOF
+
+      - name: Grep exact AI strings with line numbers
+        run: |
+          echo "===== const-string lines mentioning AI =====" > ai_grep.txt
+          grep -rn 'const-string.*AI' decompiled/smali* >> ai_grep.txt || true
+          echo "" >> ai_grep.txt
+          echo "===== difficulty / build-order words =====" >> ai_grep.txt
+          grep -rn -i 'difficulty\|isAI\|aiTeam\|buildOrder\|AI_' decompiled/smali* | head -300 >> ai_grep.txt || true
+          echo "" >> ai_grep.txt
+          echo "===== resource strings about AI =====" >> ai_grep.txt
+          grep -rn -i 'ai_\|>AI\|AI<\|difficulty' decompiled/res/values/strings.xml >> ai_grep.txt || true
+          head -100 ai_grep.txt
+
+      - name: Upload ranking and grep results
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-search-results
+          path: |
+            ai_ranking.txt
+            ai_grep.txt
+
+      - name: Upload top AI-related smali files
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-matched-files
+          path: ai_files
